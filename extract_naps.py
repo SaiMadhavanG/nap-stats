@@ -8,11 +8,11 @@ from numpyencoder import NumpyEncoder
 
 # Global Configs
 
-DELTA = 0.90
+DELTA = 1
 NET_PATH = "./mnist-net_256x4.onnx"
 DATA = torch.load("./dataset/training.pt")
 LAYERS = 4
-EXPT_NAME = "256x4_delta90"
+EXPT_NAME = "256x4_delta1"
 
 # Data preprocessing
 
@@ -82,7 +82,7 @@ for label in range(10):
             "len": len(A),
             "indices": A
         },
-        "B": {
+        "D": {
             "len": len(D),
             "indices": D
         }
