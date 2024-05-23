@@ -9,15 +9,15 @@ from numpyencoder import NumpyEncoder
 # Global Configs
 
 DELTA = 0.0
-NET_PATH = "./mnist-net_256x4.onnx"
+NET_PATH = "./256x4_scratch.onnx"
 DATA = torch.load("./dataset/training.pt")
 LAYERS = 4
-EXPT_NAME = "256x4_delta0"
+EXPT_NAME = "256x4s_delta0"
 
 # Data preprocessing
 
 imgs = DATA[0]/255
-imgs = imgs.reshape(60000, 1, 784, 1).numpy()
+imgs = imgs.reshape(60000, 1, 784).numpy()
 
 # Modifying model to get neuron activations
 
