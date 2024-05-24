@@ -8,11 +8,11 @@ from numpyencoder import NumpyEncoder
 
 # Global Configs
 
-DELTA = 0.0
+DELTA = 0.75
 NET_PATH = "./256x4_scratch.onnx"
 DATA = torch.load("./dataset/training.pt")
 LAYERS = 4
-EXPT_NAME = "256x4s_delta0"
+EXPT_NAME = "256x4s_delta75"
 
 # Data preprocessing
 
