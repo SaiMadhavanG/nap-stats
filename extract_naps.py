@@ -5,19 +5,26 @@ import numpy as np
 from tqdm.auto import tqdm
 import json
 from numpyencoder import NumpyEncoder
+from torchvision import transforms, datasets
+from torch.utils.data import DataLoader
 
 # Global Configs
-
-DELTA = 0.75
-NET_PATH = "./256x4_scratch.onnx"
+DELTA = 0.9
+NET_PATH = "./64x4_scratch.onnx"
 DATA = torch.load("./dataset/training.pt")
-LAYERS = 4
-EXPT_NAME = "256x4s_delta75"
+EXPT_NAME = "64x4_scratch_delta90"
 
 # Data preprocessing
 
-imgs = DATA[0]/255
-imgs = imgs.reshape(60000, 1, 784).numpy()
+transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.,), (1.,))
+])
+
+trainset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+trainloader = DataLoader(trainset, batch_size=50000, shuffle=True)
+
+imgs, labels = next(iter(trainloader))
 
 # Modifying model to get neuron activations
 
@@ -48,23 +55,26 @@ P = {
     {
         'net': NET_PATH,
         'delta': DELTA,
-        'data_len': DATA[1].shape[0]
+        'data_len': DATA[1].shape[0],
+        # FIXME: To make it compatible other architectures, specify o/p shapes of each node/layer
+        'neurons_width': 64
     }
 }
 
 for label in range(10):
     # Filetering relevant data alone
-    mask = (DATA[1] == label).numpy()
+    mask = (labels == label).numpy()
     S = imgs[mask]
 
     # Initializing a counter
-    count = np.zeros((LAYERS, 256))
+    # FIXME: To make it compatible other architectures, counter should be separate for each node/layer
+    count = np.zeros((4, 64))
 
     # Counting across relevant data
     print(f"Processing label {label}...")
 
     for example in tqdm(S):
-        outputs = session.run(None, {input_name: example})
+        outputs = session.run(None, {input_name: example.numpy().reshape(1, 1, 28, 28)})
         neuron_activations = np.concatenate(outputs[1:])
         whether_activated = neuron_activations > 0
         count += whether_activated
@@ -72,7 +82,7 @@ for label in range(10):
     # Adding neuron indices in A or D based on whether their fr (frequency ratio) is greater than or lesser than delta
     fr = count / S.shape[0]
     greater_than_delta = np.where(fr>=DELTA)
-    lesser_than_delta = np.where(fr<=(1-DELTA))
+    lesser_than_delta = np.where(fr<(1-DELTA))
     A = list(zip(greater_than_delta[0], greater_than_delta[1]))
     D = list(zip(lesser_than_delta[0], lesser_than_delta[1]))
     
