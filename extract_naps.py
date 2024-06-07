@@ -13,6 +13,8 @@ DELTA = 0.9
 NET_PATH = "./64x4_scratch.onnx"
 DATA = torch.load("./dataset/training.pt")
 EXPT_NAME = "64x4_scratch_delta90"
+LAYERS = 4
+NEURONS_WIDTH = 64
 
 # Data preprocessing
 
@@ -57,7 +59,8 @@ P = {
         'delta': DELTA,
         'data_len': DATA[1].shape[0],
         # FIXME: To make it compatible other architectures, specify o/p shapes of each node/layer
-        'neurons_width': 64
+        'neurons_width': NEURONS_WIDTH,
+        'layers': LAYERS
     }
 }
 
@@ -68,7 +71,7 @@ for label in range(10):
 
     # Initializing a counter
     # FIXME: To make it compatible other architectures, counter should be separate for each node/layer
-    count = np.zeros((4, 64))
+    count = np.zeros((LAYERS, NEURONS_WIDTH))
 
     # Counting across relevant data
     print(f"Processing label {label}...")
