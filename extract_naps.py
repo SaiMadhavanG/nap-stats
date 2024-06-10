@@ -9,10 +9,10 @@ from torchvision import transforms, datasets
 from torch.utils.data import DataLoader
 
 # Global Configs
-DELTA = 0.9
-NET_PATH = "./64x4_scratch.onnx"
+DELTA = 0.99
+NET_PATH = "./mnist_fc_64x4_adv_1.onnx"
 DATA = torch.load("./dataset/training.pt")
-EXPT_NAME = "64x4_scratch_delta90"
+EXPT_NAME = "mnist_fc_64x4_adv_1_d99"
 LAYERS = 4
 NEURONS_WIDTH = 64
 
