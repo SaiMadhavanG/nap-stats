@@ -1,6 +1,5 @@
 import torch
-import onnx
-import onnxruntime as ort
+import torch.nn as nn
 import numpy as np
 from tqdm.auto import tqdm
 import json
@@ -8,16 +7,49 @@ from numpyencoder import NumpyEncoder
 from torchvision import transforms, datasets
 from torch.utils.data import DataLoader
 
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
 # Global Configs
-DELTA = 0.99
-NET_PATH = "./mnist_fc_64x4_adv_1.onnx"
-EXPT_NAME = "mnist_fc_64x4_adv_1_d99"
-LAYERS = 4
-NEURONS_WIDTH = 64
+DELTA = 1
+MODEL_PATH = "./models/mnist_fc_64x4_adv_1.model"
+EXPT_NAME = "torch_test"
 INPUT_SHAPE = (1, 1, 28, 28)
+# Define models
+class SimpleNN(nn.Module):
+    def __init__(self):
+        super(SimpleNN, self).__init__()
+        self.fc1 = nn.Linear(28 * 28, 64)
+        self.fc2 = nn.Linear(64, 64)
+        self.fc3 = nn.Linear(64, 64)
+        self.fc4 = nn.Linear(64, 64)
+        self.fc5 = nn.Linear(64, 10)
 
+    def forward(self, x):
+        x = x.view(-1, 28 * 28)
+        x = torch.relu(self.fc1(x))
+        x = torch.relu(self.fc2(x))
+        x = torch.relu(self.fc3(x))
+        x = torch.relu(self.fc4(x))
+        x = self.fc5(x)
+        return x
+
+def mnistfc():
+    return nn.Sequential(
+    nn.Flatten(),
+    nn.Linear(784, 64),
+    nn.ReLU(),
+    nn.Linear(64, 64),
+    nn.ReLU(),
+    nn.Linear(64, 64),
+    nn.ReLU(),
+    nn.Linear(64, 64),
+    nn.ReLU(),
+    nn.Linear(64, 10),
+)
+# Load the model
+model = mnistfc().to(device)
+model.load_state_dict(torch.load(MODEL_PATH)['state_dict'])
+model.eval()
 # Data preprocessing
-
 transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.,), (1.,))
@@ -27,72 +59,85 @@ trainset = datasets.MNIST(root='./data', train=True, download=True, transform=tr
 trainloader = DataLoader(trainset, batch_size=50000, shuffle=True)
 
 imgs, labels = next(iter(trainloader))
+# Hook to capture activations
+activations = {}
+def get_activation(name):
+    def hook(model, input, output):
+        activations[name] = output.detach().cpu()
+    return hook
+# Getting layers of interest
+layers = {}
 
-# Modifying model to get neuron activations
-
-model = onnx.load(NET_PATH)
-
-def add_intermediate_outputs(model):
-    graph = model.graph
-    for node in graph.node:
-        if node.op_type == "Relu":
-            for output in node.output:
-                intermediate_value_info = onnx.helper.make_tensor_value_info(output, onnx.TensorProto.FLOAT, None)
-                graph.output.append(intermediate_value_info)
-    return model
-
-modified_model = add_intermediate_outputs(model)
-
-modified_model_path = f'{NET_PATH.split(".")[1][1:]}_modified.onnx'
-onnx.save(modified_model, modified_model_path)
-
-# Setting up inference in onnx
-
-session = ort.InferenceSession(modified_model_path)
-input_name = session.get_inputs()[0].name
-
+for module in model.named_modules():
+    if isinstance(module[1], nn.modules.activation.ReLU):
+        if isinstance(prev[1], nn.modules.linear.Linear):
+            layers[prev[0]] = prev[1].out_features
+    prev = module
+# Registering hooks for required layers
+for layer in layers:
+    model.__getattr__(layer).register_forward_hook(get_activation(layer))
 # Going through each label
 P = {
     'config':
     {
-        'net': NET_PATH,
+        'net': MODEL_PATH,
         'delta': DELTA,
         'data_len': labels.shape[0],
-        # FIXME: To make it compatible other architectures, specify o/p shapes of each node/layer
-        'neurons_width': NEURONS_WIDTH,
-        'layers': LAYERS,
+        'layers': layers,
         'input_shape': INPUT_SHAPE
     }
 }
+class ActivationCounter:
+    def __init__(self, layers: dict) -> None:
+        self.layers = layers
+        self.init_counter()
+        
+    def init_counter(self):
+        self.counter = {}
 
+        for layer in self.layers:
+            self.counter[layer] = np.zeros(self.layers[layer])
+
+    def add(self, layer, whether_activated):
+        self.counter[layer] += whether_activated
+
+    def getAD(self, delta, total_num):
+        A = []
+        D = []
+        for layer_idx, layer in enumerate(layers):
+            fr = self.counter[layer]/total_num
+            greater_than_delta = np.where(fr >= DELTA)
+            lesser_than_delta = np.where(fr < (1 - DELTA))
+            for neuron_idx in greater_than_delta[0]:
+                A.append((layer_idx, neuron_idx))
+            for neuron_idx in lesser_than_delta[0]:
+                D.append((layer_idx, neuron_idx))
+    
+        return A, D
 for label in range(10):
-    # Filetering relevant data alone
-    mask = (labels == label).numpy()
+    # Filtering relevant data alone
+    mask = (labels == label)
     S = imgs[mask]
 
     # Initializing a counter
-    # FIXME: To make it compatible other architectures, counter should be separate for each node/layer
-    count = np.zeros((LAYERS, NEURONS_WIDTH))
+    counter = ActivationCounter(layers)
 
     # Counting across relevant data
     print(f"Processing label {label}...")
 
     for example in tqdm(S):
-        outputs = session.run(None, {input_name: example.numpy().reshape(1, 1, 28, 28)})
-        neuron_activations = np.concatenate(outputs[1:])
-        whether_activated = neuron_activations > 0
-        count += whether_activated
+        activations.clear()
+        with torch.no_grad():
+            model(example.unsqueeze(0).to(device))
+        
+        for layer, activation in activations.items():
+            whether_activated = (activation > 0).numpy().flatten()
+            counter.add(layer, whether_activated)
 
-    # Adding neuron indices in A or D based on whether their fr (frequency ratio) is greater than or lesser than delta
-    fr = count / S.shape[0]
-    greater_than_delta = np.where(fr>=DELTA)
-    lesser_than_delta = np.where(fr<(1-DELTA))
-    A = list(zip(greater_than_delta[0], greater_than_delta[1]))
-    D = list(zip(lesser_than_delta[0], lesser_than_delta[1]))
-    
+    A, D = counter.getAD(DELTA, S.shape[0])
+
     P[label] = {
-        "A":
-        {
+        "A": {
             "len": len(A),
             "indices": A
         },
@@ -101,8 +146,6 @@ for label in range(10):
             "indices": D
         }
     }
-
 # Writing it out into a file
-
 with open(f"./NAPs/{EXPT_NAME}.json", "w") as f:
     json.dump(P, f, cls=NumpyEncoder)
