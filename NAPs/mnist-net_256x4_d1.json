@@ -1,0 +1,27 @@
+{
+  "config": {
+    "net": "./models/mnist-net_256x4.onnx",
+    "delta": 1,
+    "data_len": 50000,
+    "layers": {
+      "Gemm_12": 256,
+      "Gemm_14": 256,
+      "Gemm_16": 256,
+      "Gemm_18": 256
+    },
+    "input_shape": [1, 1, 28, 28]
+  },
+  "0": {
+    "A": { "len": 1, "indices": [[0, 105]] },
+    "D": { "len": 0, "indices": [] }
+  },
+  "1": { "A": { "len": 0, "indices": [] }, "D": { "len": 0, "indices": [] } },
+  "2": { "A": { "len": 0, "indices": [] }, "D": { "len": 0, "indices": [] } },
+  "3": { "A": { "len": 0, "indices": [] }, "D": { "len": 0, "indices": [] } },
+  "4": { "A": { "len": 0, "indices": [] }, "D": { "len": 0, "indices": [] } },
+  "5": { "A": { "len": 0, "indices": [] }, "D": { "len": 0, "indices": [] } },
+  "6": { "A": { "len": 0, "indices": [] }, "D": { "len": 0, "indices": [] } },
+  "7": { "A": { "len": 0, "indices": [] }, "D": { "len": 0, "indices": [] } },
+  "8": { "A": { "len": 0, "indices": [] }, "D": { "len": 0, "indices": [] } },
+  "9": { "A": { "len": 0, "indices": [] }, "D": { "len": 0, "indices": [] } }
+}

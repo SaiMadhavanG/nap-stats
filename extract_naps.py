@@ -6,14 +6,23 @@ import json
 from numpyencoder import NumpyEncoder
 from torchvision import transforms, datasets
 from torch.utils.data import DataLoader
+from onnx2pytorch import ConvertModel
+import onnx
+
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 # Global Configs
 DELTA = 1
-MODEL_PATH = "./models/mnist_fc_64x4_adv_1.model"
-EXPT_NAME = "torch_test"
-INPUT_SHAPE = (1, 1, 28, 28)
+MODEL_PATH = "./models/vgg16-7.onnx"
+EXPT_NAME = "vgg16_d1"
+INPUT_SHAPE = (1, 3, 375, 500)
+DATASET = "IMAGENETTE"
+NHWC = False
+# NORMALIZE = ((0.4914, 0.4822, 0.4465), (0.2471, 0.2435, 0.2616))
+NORMALIZE = None
+
 # Define models
+
 class SimpleNN(nn.Module):
     def __init__(self):
         super(SimpleNN, self).__init__()
@@ -45,19 +54,37 @@ def mnistfc():
     nn.ReLU(),
     nn.Linear(64, 10),
 )
+
 # Load the model
-model = mnistfc().to(device)
-model.load_state_dict(torch.load(MODEL_PATH)['state_dict'])
+if "onnx" in MODEL_PATH:
+    onnx_model = onnx.load(MODEL_PATH)
+    model = ConvertModel(onnx_model).to(device)
+else:
+    model = mnistfc().to(device)
+    model.load_state_dict(torch.load(MODEL_PATH)['state_dict'])
 model.eval()
 # Data preprocessing
-transform = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.,), (1.,))
-])
+print(model)
 
-trainset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-trainloader = DataLoader(trainset, batch_size=50000, shuffle=True)
+if NORMALIZE:
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(*NORMALIZE)
+    ])
+else:
+    transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.,), (1.,))
+    ])
 
+if DATASET == "CIFAR10":
+    trainset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+elif DATASET == "MNIST":
+    trainset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+elif DATASET == "IMAGENETTE":
+    trainset = datasets.Imagenette(root='./data', split="train", download=False, transform=transform)
+
+trainloader = DataLoader(trainset, batch_size=len(trainset), shuffle=True)
 imgs, labels = next(iter(trainloader))
 # Hook to capture activations
 activations = {}
@@ -84,7 +111,8 @@ P = {
         'delta': DELTA,
         'data_len': labels.shape[0],
         'layers': layers,
-        'input_shape': INPUT_SHAPE
+        'input_shape': INPUT_SHAPE,
+        'dataset': DATASET
     }
 }
 class ActivationCounter:
@@ -114,6 +142,8 @@ class ActivationCounter:
                 D.append((layer_idx, neuron_idx))
     
         return A, D
+    
+print("here")
 for label in range(10):
     # Filtering relevant data alone
     mask = (labels == label)
@@ -128,6 +158,9 @@ for label in range(10):
     for example in tqdm(S):
         activations.clear()
         with torch.no_grad():
+            if NHWC:
+                example = example.transpose(0, 2)
+                example = example.transpose(0, 1)
             model(example.unsqueeze(0).to(device))
         
         for layer, activation in activations.items():
